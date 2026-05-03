@@ -1,40 +1,23 @@
-# ODATANO-WATCH - CAP-based Cardano Blockchain Monitoring Plugin
+# ODATANO-WATCH
 
 [![npm version](https://badge.fury.io/js/@odatano%2Fwatch.svg)](https://www.npmjs.com/package/@odatano/watch)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.9-blue)](https://www.typescriptlang.org/)
 [![CAP](https://img.shields.io/badge/SAP%20CAP-9.0%2B-orange)](https://cap.cloud.sap/)
 [![Tests](https://github.com/ODATANO/ODATANO-WATCH/actions/workflows/test.yml/badge.svg)](https://github.com/ODATANO/ODATANO-WATCH/actions/workflows/test.yml)
-[![codecov](https://codecov.io/gh/ODATANO/ODATANO-WATCH/branch/main/graph/badge.svg)](https://codecov.io/gh/ODATANO/ODATANO-WATCH)
 
-A CAP (Cloud Application Programming Model) plugin for monitoring the Cardano blockchain. Built as a fully integrated plugin, it can be seamlessly integrated into existing CAP projects to provide blockchain functionalities such as address monitoring, transaction tracking, and event management.
+CAP plugin for monitoring the Cardano blockchain. Watches addresses, payment credentials, and minting policies; emits events with rich UTxO payloads (assets, inline datums, reference scripts) and persists them for replay.
 
-📚 **Documentation**: [Quick Start](docs/QUICKSTART.md) | [Setup Guide](docs/SETUP.md) | [Architecture](docs/ARCHITECTURE.md)
+📚 **Docs**: [Quick Start](docs/QUICKSTART.md) · [Setup](docs/SETUP.md) · [Architecture](docs/ARCHITECTURE.md)
 
-## Features
-
-✅ **Plug & Play Integration**: Automatic CDS plugin registration  
-✅ **TypeScript First**: Fully type-safe with complete type definitions  
-✅ **Address Monitoring**: Monitor Cardano addresses for new transactions  
-✅ **Transaction Tracking**: Track submitted transactions and their confirmations  
-✅ **Multi-Path Polling**: Independent polling intervals for different monitoring types  
-✅ **Event-based Architecture**: Different events for different blockchain activities  
-✅ **OData Admin Service**: Complete REST/OData API for management and monitoring  
-✅ **Multi-Network Support**: Support for mainnet, preview, and preprod  
-✅ **Production Ready**: Comprehensive error handling, logging, and validation  
-✅ **Extensible**: Ready for Smart Contracts, NFTs, and custom events
-
-## Installation
+## Install
 
 ```bash
 npm add @odatano/watch
 ```
 
-## Quick Start
+## Configure
 
-### 1. Configure the Plugin
-
-Add the configuration to your CAP project's `package.json`:
+`package.json`:
 
 ```json
 {
@@ -42,353 +25,76 @@ Add the configuration to your CAP project's `package.json`:
     "requires": {
       "watch": {
         "network": "preview",
-        "blockfrostApiKey": "previewABC123...",
-        "autoStart": true,
-        
-        "addressPolling": {
-          "enabled": true,
-          "interval": 30
-        },
-        "transactionPolling": {
-          "enabled": true,
-          "interval": 60
-        }
+        "blockfrostApiKey": "preview_YOUR_KEY",
+        "autoStart": true
       }
     }
   }
 }
 ```
 
-### 2. Automatic Initialization
+Credential and policy watching are off by default — opt in via `credentialPolling` / `policyPolling`. Credential watching also needs a (free-tier-OK) Koios endpoint. See [Quick Start](docs/QUICKSTART.md) for the full config.
 
-The plugin is automatically loaded as a CDS plugin. No manual initialization required!
-
-### 3. Use Events
+## Subscribe to events
 
 ```typescript
-import type { 
+import type {
   NewTransactionsEvent,
-  TxConfirmedEvent
+  CredentialNewTransactionsEvent,
+  PolicyAssetMintedEvent,
 } from "@odatano/watch";
 
-// Address Monitoring: React to new transactions
-cds.on("cardano.newTransactions", async (data: NewTransactionsEvent) => {
-  console.log(`${data.count} new transactions for ${data.address}`);
-  for (const txHash of data.transactions) {
-    await processPayment(txHash);
+cds.on("cardano.newTransactions", async (e: NewTransactionsEvent) => {
+  // e.address, e.tag?, e.transactions[], e.utxosCreated[], e.utxosSpent[]
+  for (const utxo of e.utxosCreated) {
+    if (utxo.inlineDatumHex) await applyDatum(utxo.inlineDatumHex);
   }
 });
 
-// Transaction Tracking: React to transaction confirmations
-cds.on("cardano.transactionConfirmed", async (data: TxConfirmedEvent) => {
-  console.log(`TX ${data.txHash} confirmed in block ${data.blockHeight}`);
-  await markOrderAsCompleted(data.txHash);
-});
+cds.on("cardano.credential.newTransactions", async (e: CredentialNewTransactionsEvent) => { /* ... */ });
+cds.on("cardano.policy.assetMinted", async (e: PolicyAssetMintedEvent) => { /* ... */ });
 ```
 
-## Admin Service API
+Other emitted events: `cardano.policy.assetBurned`, and (Phase 2 / Ogmios only) `cardano.rollback`.
 
-The plugin provides a complete OData/REST Admin Service:
+> Read [Event Delivery Semantics](docs/ARCHITECTURE.md#event-delivery-contract) before building stateful consumers — there are guarantees we **don't** make (no cross-handler ordering, no retry, no backpressure) and a checklist of patterns to follow.
 
-### Entities
+## Add a watch
 
 ```http
-GET /cardano-watcher-admin/WatchedAddresses
-GET /cardano-watcher-admin/TransactionSubmissions
-GET /cardano-watcher-admin/BlockchainEvents
-GET /cardano-watcher-admin/WatcherConfigs
-```
-
-### Control Actions
-
-**Watcher Control**
-```http
-POST /cardano-watcher-admin/startWatcher          # Start all polling paths
-POST /cardano-watcher-admin/stopWatcher           # Stop all polling paths
-POST /cardano-watcher-admin/getWatcherStatus      # Get status
-```
-
-**Address Monitoring**
-```http
-POST /cardano-watcher-admin/addWatchedAddress
+POST /odata/v4/cardano-watcher-admin/addWatchedAddress
 Content-Type: application/json
 
 {
-  "address": "addr_test1qrgfq5jeznaehnf4zs02laas2juuuyzlz48tkue50luuws2nrznmesueg7drstsqaaenq6qpcnvqvn0kessd9fw2wxys6tv622",
-  "description": "My Wallet",
-  "network": "preview"
+  "address": "addr_test1...",
+  "tag": "my-pool",
+  "includesAssetsJson": "[{\"policyId\":\"...\",\"assetNameHex\":\"\"}]",
+  "coalesceMs": 2000
 }
 ```
+
+Plus `addWatchedCredential`, `addWatchedPolicy`, `removeWatched*`. Optional fields:
+- `tag` — echoed back on each emit for dispatch routing.
+- `includesAssetsJson` — asset allowlist; non-matching txs are skipped.
+- `coalesceMs` — batch bus emits into one event per window with cumulative deltas (1 – 300_000).
+
+Full action list and entity surface in [Quick Start](docs/QUICKSTART.md) and [Architecture](docs/ARCHITECTURE.md).
+
+## Replay missed events
 
 ```http
-POST /cardano-watcher-admin/removeWatchedAddress
+POST /odata/v4/cardano-watcher-admin/getEventsSince
 Content-Type: application/json
 
-{
-  "address": "addr_test1qrgfq5jeznaehnf4zs02laas2juuuyzlz48tkue50luuws2nrznmesueg7drstsqaaenq6qpcnvqvn0kessd9fw2wxys6tv622"
-}
+{ "scope": "address", "key": "addr_test1...", "fromBlock": 12345 }
 ```
 
-**Transaction Tracking**
-```http
-POST /cardano-watcher-admin/addWatchedTransaction
-Content-Type: application/json
+Returns persisted `BlockchainEvent` rows ordered by `blockHeight` asc. Use the last returned `blockHeight` as the next call's `fromBlock` for cursor pagination.
 
-{
-  "txHash": "cade0ed879a9ea5dd65f13be98581d476b0e77946c9c11123832225a7de55e28",
-  "description": "Payment to supplier",
-  "network": "preview"
-}
-```
+## Phase 2 — Ogmios chainSync
 
-```http
-POST /cardano-watcher-admin/removeWatchedTransaction
-Content-Type: application/json
-
-{
-  "txHash": "cade0ed879a9ea5dd65f13be98581d476b0e77946c9c11123832225a7de55e28"
-}
-```
-
-## Programmatic Usage
-
-```typescript
-import cardanoWatcher from "@odatano/watch";
-
-// Start/stop all polling paths
-await cardanoWatcher.start();
-await cardanoWatcher.stop();
-
-// Get status
-const status = cardanoWatcher.getStatus();
-const config = cardanoWatcher.config();
-```
-
-## Event Types
-
-### Address Activity Event
-
-Emitted when new transactions are detected for a watched address.
-
-```typescript
-import type { NewTransactionsEvent } from "@odatano/watch";
-
-cds.on("cardano.newTransactions", async (event: NewTransactionsEvent) => {
-  console.log(`Address: ${event.address}`);
-  console.log(`Count: ${event.count}`);
-  console.log(`TxHashes: ${event.transactions.join(", ")}`);
-  
-  // Process each transaction
-  for (const txHash of event.transactions) {
-    await processPayment(txHash);
-  }
-});
-```
-
-### Transaction Confirmation Event
-
-Emitted when a submitted transaction is confirmed in the blockchain.
-
-```typescript
-import type { TxConfirmedEvent } from "@odatano/watch";
-
-cds.on("cardano.transactionConfirmed", async (event: TxConfirmedEvent) => {
-  console.log(`TX ${event.txHash} confirmed!`);
-  console.log(`Block: ${event.blockHeight}`);
-  console.log(`Confirmations: ${event.confirmations}`);
-  
-  // Mark order as completed
-  await markOrderAsCompleted(event.txHash);
-});
-```
-
-## Data Model
-
-The plugin provides the following entities:
-
-### WatchedAddress
-Stores addresses to monitor.
-
-```cds
-entity WatchedAddress {
-  key address: Bech32;
-  description: String(500);
-  active: Boolean;
-  lastCheckedBlock: Integer64;
-  network: String(20);
-  events: Composition of many BlockchainEvent;
-  hasEvents: Boolean;
-}
-```
-
-### TransactionSubmission
-Tracks submitted transactions.
-
-```cds
-entity TransactionSubmission {
-  key txHash: Blake2b256;
-  description: String(500);
-  active: Boolean;
-  currentStatus: String(20);  // PENDING, CONFIRMED, FAILED
-  confirmations: Integer;
-  network: String(20);
-  events: Composition of many BlockchainEvent;
-  hasEvents: Boolean;
-}
-```
-
-### BlockchainEvent
-Stores all detected blockchain events.
-
-```cds
-entity BlockchainEvent {
-  key id: UUID;
-  type: String(50);  // TX_CONFIRMED, ADDRESS_ACTIVITY, etc.
-  description: String(500);
-  blockHeight: Integer64;
-  blockHash: Blake2b256;
-  txHash: Blake2b256;
-  address: Association to WatchedAddress;
-  submission: Association to TransactionSubmission;
-  payload: LargeString;
-  processed: Boolean;
-  processedAt: Timestamp;
-  error: LargeString;
-  network: String(20);
-  createdAt: Timestamp;
-}
-```
-
-### Transaction
-Detailed transaction information.
-
-```cds
-entity Transaction {
-  key ID: UUID;
-  txHash: Blake2b256;
-  blockNumber: Integer64;
-  blockHash: Blake2b256;
-  sender: Bech32;
-  receiver: Bech32;
-  amount: Lovelace;
-  fee: Lovelace;
-  metadata: LargeString;
-  assets: LargeString;
-  status: String(20);
-  network: String(20);
-  inMempool: Boolean;
-  mempoolEnteredAt: Timestamp;
-  confirmedAt: Timestamp;
-  createdAt: Timestamp;
-}
-```
-
-## Polling Mechanism
-
-The plugin uses two independent polling paths:
-
-### Address Polling (Default: 30s)
-- Monitors all active `WatchedAddress` entries
-- Fetches new transactions from the blockchain
-- Stores detected transactions in `Transaction` and `BlockchainEvent`
-- Emits `cardano.newTransactions` event
-
-### Transaction Polling (Default: 60s)
-- Monitors all active `TransactionSubmission` entries
-- Checks if submitted transactions are in the blockchain
-- Updates status from PENDING to CONFIRMED
-- Emits `cardano.transactionConfirmed` event
-
-Both paths can be controlled independently:
-```typescript
-await cardanoWatcher.startAddressPolling();
-await cardanoWatcher.stopTransactionPolling();
-```
-
-## Development
-
-### Project Structure
-
-```
-
-├── src/                      # TypeScript source code
-│   ├── index.ts             # Main Plugin Module
-│   ├── config.ts            # Configuration Management
-│   ├── watcher.ts           # Blockchain Watcher Logic
-│   ├── blockfrost.ts        # Blockfrost API Integration
-│   └── plugin.ts            # Plugin Implementation
-├── srv/                      # Service Definitions & Implementations
-│   ├── admin-service.cds    # Admin Service Definition
-│   ├── admin-service.ts     # Admin Service Implementation
-│   └── utils/               # Service Utilities
-│       ├── backend-request-handler.ts
-│       ├── error-codes.ts
-│       ├── errors.ts
-│       └── validators.ts
-├── db/                       # CDS Data Model
-│   └── schema.cds           # Entity Definitions
-├── @cds-models/              # Generated Type Definitions
-│   ├── index.ts
-│   └── CardanoWatcherAdminService/
-├── docs/                     # Documentation
-│   ├── QUICKSTART.md
-│   ├── SETUP.md
-│   └── ARCHITECTURE.md
-├── test/                     # Tests
-│   ├── unit/
-│   └── integration/
-├── cds-plugin.js            # CDS Plugin Entry Point
-├── package.json
-└── tsconfig.json
-```
-
-### Build
-
-```bash
-npm run build        # Compile TypeScript
-npm run build:watch  # Watch mode for development
-```
-
-### Tests
-
-```bash
-npm test               # Run all tests
-npm run test:watch     # Watch mode for tests
-npm run test:coverage  # Run tests with coverage report
-```
-
-### Code Quality
-
-```bash
-npm run lint        # Run ESLint
-npm run format      # Prettier code formatting
-```
-
-## Configuration Options
-
-```typescript
-interface CardanoWatcherConfig {
-  network?: "mainnet" | "preview" | "preprod";
-  blockfrostApiKey?: string;
-  autoStart?: boolean;
-  maxRetries?: number;
-  retryDelay?: number;
-  
-  addressPolling?: {
-    enabled: boolean;
-    interval: number; // in seconds
-  };
-  transactionPolling?: {
-    enabled: boolean;
-    interval: number; // in seconds
-  };
-}
-```
+Set `backend: 'ogmios'` and `ogmiosUrl: 'ws://localhost:1337'` to switch from polling to a chainSync stream with native rollback signal. Backfill from Blockfrost runs once per new watch. See [Architecture → Phase 2](docs/ARCHITECTURE.md#phase-2-direction-preview) for caveats.
 
 ## License
 
 Apache-2.0
-
-## Support
-
-For questions or issues, please create an [Issue](https://github.com/yourusername/cardano-watcher/issues).

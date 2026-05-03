@@ -45,7 +45,7 @@ cds.on('served', async () => {
   
   try {
     // Import the watcher module
-    const watcher = await import('./index');
+    const watcher = await import('./index.js');
     
     // Initialize the watcher with the application's database
     await watcher.initialize();
@@ -66,7 +66,7 @@ cds.on('shutdown', async () => {
   
   try {
     logger.debug('Shutting down...');
-    const watcher = await import('./index');
+    const watcher = await import('./index.js');
     await watcher.stop();
     logger.info('stopped');
   } catch (err) {

@@ -4,6 +4,12 @@ module.exports = {
   setupFilesAfterEnv: ['ts-node/register/transpile-only'],
   testMatch: ['**/test/**/*.test.ts', '**/test/**/*.spec.ts'],
   moduleFileExtensions: ['ts', 'js', 'json'],
+  // Under tsconfig `moduleResolution: "node16"`, relative imports must include
+  // `.js` extensions. The compiled-on-the-fly tests resolve those back to `.ts`
+  // via this mapper — Jest's resolver uses the literal path, not TypeScript's.
+  moduleNameMapper: {
+    '^(\\.{1,2}/.*)\\.js$': '$1',
+  },
   transform: {
     '^.+\\.(ts|tsx)$': ['ts-jest', { tsconfig: 'tsconfig.json' }],
   },

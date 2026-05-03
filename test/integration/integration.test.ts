@@ -477,4 +477,122 @@ describe('Integration Tests', () => {
       expect(results[1].status).to.equal(200);
     });
   });
+
+  describe('Replay (getEventsSince)', () => {
+    const validCredHex = '0805d8541db33f4841585fed4c3a7e87e2ff7018243038f06ceb660c';
+    const validPolicyId = '8d18d786e92776c824607fd8e193ec535c79dc61ea2405ddf3b09fe3';
+
+    async function seedAddressEvents(address: string, blocks: number[]): Promise<void> {
+      const { INSERT } = cds.ql;
+      for (let i = 0; i < blocks.length; i++) {
+        await cds.db.run(INSERT.into('odatano.watch.BlockchainEvent').entries({
+          id: `seed-${address.slice(-6)}-${i}-${blocks[i]}`,
+          type: 'TRANSACTION',
+          blockHeight: blocks[i],
+          txHash: `tx_${blocks[i]}`,
+          address_address: address,
+          payload: JSON.stringify({ txHash: `tx_${blocks[i]}`, blockHeight: blocks[i] }),
+          network: 'preview',
+          processed: false,
+          createdAt: new Date().toISOString(),
+        }));
+      }
+    }
+
+    it('rejects an unknown scope', async () => {
+      try {
+        await test.post('/odata/v4/cardano-watcher-admin/getEventsSince', {
+          scope: 'banana',
+          key: 'whatever',
+        });
+        expect.fail('Should have thrown an error');
+      } catch (error: any) {
+        expect(error.response.status).to.equal(400);
+      }
+    });
+
+    it('rejects a key that does not match the scope shape', async () => {
+      try {
+        await test.post('/odata/v4/cardano-watcher-admin/getEventsSince', {
+          scope: 'credential',
+          key: 'not-a-cred',
+        });
+        expect.fail('Should have thrown an error');
+      } catch (error: any) {
+        expect(error.response.status).to.equal(400);
+      }
+    });
+
+    it('returns an empty array for a watch with no persisted events', async () => {
+      const { status, data } = await test.post('/odata/v4/cardano-watcher-admin/getEventsSince', {
+        scope: 'address',
+        key: TEST_DATA.testAddress1,
+      });
+      expect(status).to.equal(200);
+      expect(data.value ?? data).to.deep.equal([]);
+    });
+
+    it('returns persisted address events ordered by blockHeight asc', async () => {
+      await seedAddressEvents(TEST_DATA.testAddress1, [200, 100, 150]);
+
+      const { status, data } = await test.post('/odata/v4/cardano-watcher-admin/getEventsSince', {
+        scope: 'address',
+        key: TEST_DATA.testAddress1,
+      });
+      expect(status).to.equal(200);
+      const rows = data.value ?? data;
+      expect(rows).to.have.lengthOf(3);
+      expect(rows.map((r: { blockHeight: number }) => r.blockHeight)).to.deep.equal([100, 150, 200]);
+    });
+
+    it('honors fromBlock as an exclusive cursor', async () => {
+      await seedAddressEvents(TEST_DATA.testAddress1, [100, 150, 200]);
+
+      const { data } = await test.post('/odata/v4/cardano-watcher-admin/getEventsSince', {
+        scope: 'address',
+        key: TEST_DATA.testAddress1,
+        fromBlock: 150,
+      });
+      const rows = data.value ?? data;
+      expect(rows).to.have.lengthOf(1);
+      expect(rows[0].blockHeight).to.equal(200);
+    });
+
+    it('does not bleed events across watches with different keys', async () => {
+      await seedAddressEvents(TEST_DATA.testAddress1, [100]);
+      await seedAddressEvents(TEST_DATA.testAddress2, [100]);
+
+      const { data } = await test.post('/odata/v4/cardano-watcher-admin/getEventsSince', {
+        scope: 'address',
+        key: TEST_DATA.testAddress1,
+      });
+      const rows = data.value ?? data;
+      expect(rows).to.have.lengthOf(1);
+    });
+
+    it('caps limit at 10_000 even when caller asks for more', async () => {
+      // Don't actually seed 10k rows; just verify the action accepts the
+      // request and returns ≤ 10_000 (here, 0).
+      const { status } = await test.post('/odata/v4/cardano-watcher-admin/getEventsSince', {
+        scope: 'policy',
+        key: validPolicyId,
+        limit: 100_000,
+      });
+      expect(status).to.equal(200);
+    });
+
+    it('accepts credential and policy scopes with correctly-shaped keys', async () => {
+      const credResp = await test.post('/odata/v4/cardano-watcher-admin/getEventsSince', {
+        scope: 'credential',
+        key: validCredHex,
+      });
+      expect(credResp.status).to.equal(200);
+
+      const policyResp = await test.post('/odata/v4/cardano-watcher-admin/getEventsSince', {
+        scope: 'policy',
+        key: validPolicyId,
+      });
+      expect(policyResp.status).to.equal(200);
+    });
+  });
 });

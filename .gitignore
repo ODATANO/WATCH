@@ -9,7 +9,8 @@ build/
 gen/
 .vscode/
 @cds-models
-watch.db
+*watch.db*
 .claude/
+
 
 # Note: cds-plugin.js is a source file (plain JS), not generated from TS 

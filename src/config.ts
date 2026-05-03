@@ -14,15 +14,45 @@ export interface PollingConfig {
 
 const logger = cds.log("ODATANO-WATCH");
 
+export type WatcherBackend = "blockfrost" | "ogmios";
+
 export interface CardanoWatcherConfig {
   network?: "mainnet" | "preview" | "preprod";
   blockfrostApiKey?: string;
+  /**
+   * Koios API key. Optional — Koios has a free tier with rate limits.
+   * Required only for credential watching, where we resolve a payment
+   * credential to its set of bech32 addresses via Koios `credential_*`.
+   */
+  koiosApiKey?: string;
+  /**
+   * Primary backend (Phase 2). Default 'blockfrost' — keeps the polling
+   * paths active. Set to 'ogmios' to use chainSync; the polling paths are
+   * skipped and replaced by per-block filtering with native rollback.
+   * Pick one per process; no auto-failover.
+   */
+  backend?: WatcherBackend;
+  /**
+   * Ogmios WebSocket URL. Required when backend === 'ogmios'.
+   * Default `ws://localhost:1337`.
+   */
+  ogmiosUrl?: string;
   autoStart?: boolean;
   maxRetries?: number;
   retryDelay?: number;
   // Individual polling configurations
   addressPolling?: PollingConfig;        // Monitor watched addresses for new transactions
   transactionPolling?: PollingConfig;    // Check if submitted transactions are in the network
+  credentialPolling?: PollingConfig;     // Monitor watched payment credentials for new transactions
+  policyPolling?: PollingConfig;         // Monitor watched minting policies for asset mint/burn
+  /**
+   * Maximum number of distinct assets allowed under a watched policy before
+   * the watcher refuses to poll it. The per-policy fan-out is one Blockfrost
+   * `assetsHistory` request per asset; high-asset NFT policies will exhaust
+   * rate limits quickly. Default 100 — well clear of stablecoin/utility-token
+   * policies (typically 1–10 assets).
+   */
+  policyAssetCap?: number;
 }
 
 /**
@@ -37,14 +67,20 @@ function loadInitialConfig(): CardanoWatcherConfig {
   }
   // Resolve apiKey: prefer CDS config, fallback to env variable (for plugin development only)
   let apiKey = cdsConfig?.blockfrostApiKey ?? env.BLOCKFROST_KEY;
-  
+  let koiosKey = cdsConfig?.koiosApiKey ?? env.KOIOS_KEY;
+  let ogmiosUrl = cdsConfig?.ogmiosUrl ?? env.OGMIOS_URL ?? "ws://localhost:1337";
+  let backend = (cdsConfig?.backend ?? env.WATCHER_BACKEND ?? "blockfrost") as WatcherBackend;
+
   return {
     network: cdsConfig?.network ?? "preview",
     blockfrostApiKey: apiKey,
+    koiosApiKey: koiosKey,
+    backend,
+    ogmiosUrl,
     autoStart: cdsConfig?.autoStart ?? true,
     maxRetries: cdsConfig?.maxRetries ?? 3,
     retryDelay: cdsConfig?.retryDelay ?? 5000,
-    
+
     // Individual polling configs with sensible defaults
     addressPolling: {
       enabled: cdsConfig?.addressPolling?.enabled !== undefined ? cdsConfig.addressPolling.enabled : true,
@@ -54,6 +90,17 @@ function loadInitialConfig(): CardanoWatcherConfig {
       enabled: cdsConfig?.transactionPolling?.enabled !== undefined ? cdsConfig.transactionPolling.enabled : true,
       interval: cdsConfig?.transactionPolling?.interval ?? 60,
     },
+    credentialPolling: {
+      // Default off — credential watching needs a Koios key, so opt-in
+      enabled: cdsConfig?.credentialPolling?.enabled === true,
+      interval: cdsConfig?.credentialPolling?.interval ?? 60,
+    },
+    policyPolling: {
+      // Default off — opt-in, since per-asset history walks Blockfrost
+      enabled: cdsConfig?.policyPolling?.enabled === true,
+      interval: cdsConfig?.policyPolling?.interval ?? 60,
+    },
+    policyAssetCap: cdsConfig?.policyAssetCap ?? 100,
   };
 }
 
@@ -83,10 +130,19 @@ function validateConfiguration(): void {
     throw new Error(`Invalid network: ${configuration.network}. Must be one of: ${validNetworks.join(", ")}`);
   }
 
+  const validBackends: WatcherBackend[] = ["blockfrost", "ogmios"];
+  if (!validBackends.includes(configuration.backend as WatcherBackend)) {
+    throw new Error(`Invalid backend: ${configuration.backend}. Must be one of: ${validBackends.join(", ")}`);
+  }
+
   if (!configuration.blockfrostApiKey) {
     logger.warn(
       "No Blockfrost API key configured. Set blockfrostApiKey in cds.env.requires.watch configuration"
     );
+  }
+
+  if (configuration.backend === "ogmios" && !configuration.ogmiosUrl) {
+    throw new Error("backend=ogmios requires ogmiosUrl (or OGMIOS_URL env)");
   }
 }
 

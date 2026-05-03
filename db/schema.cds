@@ -11,6 +11,18 @@ type Blake2b256    : String(64);
 @description: 'Bech32 encoded address string'
 type Bech32        : String(120);
 
+@title      : 'PaymentCredentialHex'
+@description: '28 bytes payment credential (key hash or script hash) as 56-char hex string'
+type PaymentCredHex : String(56);
+
+@title      : 'PolicyId'
+@description: '28 bytes minting policy hash as 56-char hex string'
+type PolicyId      : String(56);
+
+@title      : 'AssetNameHex'
+@description: 'Asset name as hex (0–32 bytes → up to 64 hex chars)'
+type AssetNameHex  : String(64);
+
 @title      : 'Lovelace'
 @description: 'Amount of ADA in lovelace (1 ADA = 1_000_000 lovelace)'
 type Lovelace      : Decimal(20, 0);
@@ -21,6 +33,10 @@ type WatcherActionResult {
     success        : Boolean;
     message        : String;
   };
+
+@title      : 'Watcher Backend'
+@description: 'Identifies which backend produced a row — used to scope Ogmios rollbacks.'
+type WatcherBackend : String(20);
 // -----------------------------------------------------
 // Entities
 // -----------------------------------------------------
@@ -36,6 +52,18 @@ entity WatchedAddress {
     @title      : 'Description'
     @description: 'Optional description of what this address is for'
         description      : String(500);
+
+    @title      : 'Tag'
+    @description: 'Consumer-supplied label echoed back in emitted events for dispatch routing'
+        tag              : String(100);
+
+    @title      : 'Asset Filter (JSON)'
+    @description: 'Optional asset-allowlist JSON array [{policyId, assetNameHex}]. When set, only txs whose outputs at this address contain at least one listed asset fire events.'
+        includesAssetsJson : LargeString;
+
+    @title      : 'Coalesce Window (ms)'
+    @description: 'Optional coalesce window. Bus events fire at most once per `coalesceMs`, with cumulative deltas across the window. Null or 0 = no coalescing.'
+        coalesceMs       : Integer64;
 
     @title      : 'Active Status'
     @description: 'Whether this address is currently being watched'
@@ -57,6 +85,82 @@ entity WatchedAddress {
     @title      : 'Has Events'
     @description: 'Indicates if address has associated events'
         hasEvents        : Boolean default false;
+}
+
+@title      : 'Watched Credential Entity'
+@description: 'Stores payment credentials watched across all bech32 derivatives that share them'
+entity WatchedCredential {
+
+    @title      : 'Payment Credential (Key)'
+    @description: '28-byte payment credential (key hash or script hash) as 56-char hex'
+    key paymentCredHex   : PaymentCredHex not null;
+
+    @title      : 'Description'
+    @description: 'Optional description of what this credential represents'
+        description      : String(500);
+
+    @title      : 'Tag'
+    @description: 'Consumer-supplied label echoed back in emitted events for dispatch routing'
+        tag              : String(100);
+
+    @title      : 'Asset Filter (JSON)'
+    @description: 'Optional asset-allowlist JSON array [{policyId, assetNameHex}]. When set, only txs whose outputs at addresses sharing this credential contain at least one listed asset fire events.'
+        includesAssetsJson : LargeString;
+
+    @title      : 'Coalesce Window (ms)'
+    @description: 'Optional coalesce window. Bus events fire at most once per `coalesceMs`, with cumulative deltas across the window. Null or 0 = no coalescing.'
+        coalesceMs       : Integer64;
+
+    @title      : 'Active Status'
+    @description: 'Whether this credential is currently being watched'
+        active           : Boolean default true;
+
+    @title      : 'Last Checked Block'
+    @description: 'Block height of the latest transaction processed for this credential'
+        lastCheckedBlock : Integer64;
+
+    @title      : 'Network'
+    @description: 'The Cardano network (mainnet, preview, preprod)'
+        network          : String(20) default 'preview';
+
+    @title      : 'Events'
+    @description: 'Blockchain events related to this credential'
+        events           : Composition of many BlockchainEvent
+                               on events.credential = $self;
+}
+
+@title      : 'Watched Policy Entity'
+@description: 'Stores minting policies watched for asset mint/burn activity'
+entity WatchedPolicy {
+
+    @title      : 'Policy ID (Key)'
+    @description: '28-byte minting policy hash as 56-char hex'
+    key policyId         : PolicyId not null;
+
+    @title      : 'Description'
+    @description: 'Optional description of what this policy represents'
+        description      : String(500);
+
+    @title      : 'Tag'
+    @description: 'Consumer-supplied label echoed back in emitted events for dispatch routing'
+        tag              : String(100);
+
+    @title      : 'Active Status'
+    @description: 'Whether this policy is currently being watched'
+        active           : Boolean default true;
+
+    @title      : 'Last Checked Block'
+    @description: 'Block height of the latest mint/burn event processed for this policy'
+        lastCheckedBlock : Integer64;
+
+    @title      : 'Network'
+    @description: 'The Cardano network (mainnet, preview, preprod)'
+        network          : String(20) default 'preview';
+
+    @title      : 'Events'
+    @description: 'Blockchain events related to this policy'
+        events           : Composition of many BlockchainEvent
+                               on events.policy = $self;
 }
 
 @title      : 'Transaction Submission Entity'
@@ -143,6 +247,24 @@ entity BlockchainEvent {
     @description: 'Foreign key to transaction submission'
         submission_txHash: Blake2b256;
 
+    @title      : 'Credential Association'
+    @description: 'The watched credential this event is related to'
+        credential       : Association to WatchedCredential
+                               on credential.paymentCredHex = $self.credential_paymentCredHex;
+
+    @title      : 'Credential Key'
+    @description: 'Foreign key to watched credential'
+        credential_paymentCredHex: PaymentCredHex;
+
+    @title      : 'Policy Association'
+    @description: 'The watched policy this event is related to'
+        policy           : Association to WatchedPolicy
+                               on policy.policyId = $self.policy_policyId;
+
+    @title      : 'Policy Key'
+    @description: 'Foreign key to watched policy'
+        policy_policyId  : PolicyId;
+
     @title      : 'Event Payload'
     @description: 'Event payload data as JSON'
         payload          : LargeString;
@@ -166,6 +288,39 @@ entity BlockchainEvent {
     @title      : 'Created At'
     @description: 'Timestamp when event was detected'
         createdAt        : Timestamp @cds.on.insert: $now;
+
+    @title      : 'Slot'
+    @description: 'Cardano slot of the originating tx. Filled by the Ogmios backend (Phase 2); null for rows persisted by polling backends.'
+        slot             : Integer64;
+
+    @title      : 'Backend'
+    @description: 'Backend that produced this row: blockfrost | ogmios. Used to scope rollbacks — Ogmios rollback only deletes ogmios rows.'
+        backend          : WatcherBackend;
+}
+
+@title      : 'Watcher Cursor Entity'
+@description: 'Single-row entity persisting the chainSync cursor for the Ogmios backend. Survives restarts; lets the watcher re-intersect from the last applied block instead of replaying from genesis.'
+entity WatcherCursor {
+
+    @title      : 'Cursor ID (Key)'
+    @description: 'Fixed value `chainsync` — single global cursor. Distinct rows are not currently used.'
+    key id               : String(20) not null;
+
+    @title      : 'Slot'
+    @description: 'Slot of the last applied chainSync point.'
+        slot             : Integer64;
+
+    @title      : 'Block Hash'
+    @description: 'Hash of the block at `slot`.'
+        blockHash        : Blake2b256;
+
+    @title      : 'Network'
+    @description: 'Cardano network the cursor belongs to.'
+        network          : String(20);
+
+    @title      : 'Updated At'
+    @description: 'Timestamp of last cursor update.'
+        updatedAt        : Timestamp @cds.on.insert: $now @cds.on.update: $now;
 }
 
 @title      : 'Watcher Configuration Entity'

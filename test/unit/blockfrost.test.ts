@@ -19,6 +19,8 @@ const mockBlockfrostMethods = {
   txs: jest.fn<any>(),
   txsUtxos: jest.fn<any>(),
   addresses: jest.fn<any>(),
+  assetsPolicyByIdAll: jest.fn<any>(),
+  assetsHistoryAll: jest.fn<any>(),
 };
 
 jest.mock('@blockfrost/blockfrost-js', () => ({
@@ -89,7 +91,10 @@ describe('Blockfrost Module', () => {
         output_amount: [{ unit: 'lovelace', quantity: '5000000' }],
       });
       mockBlockfrostMethods.txsUtxos.mockResolvedValue({
+        inputs: [],
         outputs: [{
+          output_index: 0,
+          address: 'addr_test1...',
           amount: [{ unit: 'lovelace', quantity: '5000000' }],
         }],
       });
@@ -123,7 +128,8 @@ describe('Blockfrost Module', () => {
           block_time: 1640001000,
         });
       mockBlockfrostMethods.txsUtxos.mockResolvedValue({
-        outputs: [{ amount: [{ unit: 'lovelace', quantity: '1000000' }] }],
+        inputs: [],
+        outputs: [{ output_index: 0, address: 'addr_test1...', amount: [{ unit: 'lovelace', quantity: '1000000' }] }],
       });
 
       const result = await blockfrost.fetchAddressTransactions('addr_test1...', 1000);
@@ -147,7 +153,8 @@ describe('Blockfrost Module', () => {
           block_time: 1640000000,
         });
       mockBlockfrostMethods.txsUtxos.mockResolvedValue({
-        outputs: [{ amount: [{ unit: 'lovelace', quantity: '1000000' }] }],
+        inputs: [],
+        outputs: [{ output_index: 0, address: 'addr_test1...', amount: [{ unit: 'lovelace', quantity: '1000000' }] }],
       });
 
       const result = await blockfrost.fetchAddressTransactions('addr_test1...');
@@ -168,7 +175,10 @@ describe('Blockfrost Module', () => {
         block_time: 1640000000,
       });
       mockBlockfrostMethods.txsUtxos.mockResolvedValue({
+        inputs: [],
         outputs: [{
+          output_index: 0,
+          address: 'addr_test1...',
           amount: [{ unit: 'other-token', quantity: '100' }],
         }],
       });
@@ -324,6 +334,8 @@ describe('Blockfrost Module', () => {
         fee: 0.17,
         confirmations: 100,
         lastSeen: 1640000000,
+        utxosCreated: [],
+        utxosSpent: [],
       });
     });
 
@@ -361,6 +373,280 @@ describe('Blockfrost Module', () => {
       });
 
       expect(blockfrost.isAvailable()).toBe(true);
+    });
+  });
+
+  describe('extractUtxoDeltas', () => {
+    const watched = 'addr_watched';
+    const other = 'addr_other';
+
+    it('captures outputs at the watched address with assets and inline datum', () => {
+      const txUtxos = {
+        hash: 'tx1',
+        inputs: [],
+        outputs: [
+          {
+            output_index: 0,
+            address: watched,
+            amount: [
+              { unit: 'lovelace', quantity: '2000000' },
+              { unit: 'policy123assetname', quantity: '7' },
+            ],
+            inline_datum: 'd87980',
+            reference_script_hash: null,
+          },
+          {
+            output_index: 1,
+            address: other,
+            amount: [{ unit: 'lovelace', quantity: '1000000' }],
+          },
+        ],
+      };
+
+      const { utxosCreated, utxosSpent } = blockfrost.extractUtxoDeltas(txUtxos, 'tx1', new Set([watched]));
+
+      expect(utxosCreated).toEqual([{
+        txHash: 'tx1',
+        outputIndex: 0,
+        lovelace: '2000000',
+        assets: [{ unit: 'policy123assetname', quantity: '7' }],
+        inlineDatumHex: 'd87980',
+      }]);
+      expect(utxosSpent).toEqual([]);
+    });
+
+    it('captures inputs at the watched address as spent refs', () => {
+      const txUtxos = {
+        hash: 'tx2',
+        inputs: [
+          {
+            address: watched,
+            tx_hash: 'prevtx',
+            output_index: 3,
+            amount: [{ unit: 'lovelace', quantity: '5000000' }],
+          },
+          {
+            address: other,
+            tx_hash: 'othertx',
+            output_index: 0,
+            amount: [{ unit: 'lovelace', quantity: '1000000' }],
+          },
+        ],
+        outputs: [],
+      };
+
+      const { utxosCreated, utxosSpent } = blockfrost.extractUtxoDeltas(txUtxos, 'tx2', new Set([watched]));
+
+      expect(utxosCreated).toEqual([]);
+      expect(utxosSpent).toEqual([{ txHash: 'prevtx', outputIndex: 3 }]);
+    });
+
+    it('skips collateral and reference inputs even when address matches', () => {
+      const txUtxos = {
+        hash: 'tx3',
+        inputs: [
+          {
+            address: watched,
+            tx_hash: 'collat',
+            output_index: 0,
+            amount: [],
+            collateral: true,
+          },
+          {
+            address: watched,
+            tx_hash: 'refscript',
+            output_index: 0,
+            amount: [],
+            reference: true,
+          },
+        ],
+        outputs: [
+          {
+            output_index: 0,
+            address: watched,
+            amount: [{ unit: 'lovelace', quantity: '0' }],
+            collateral: true,
+          },
+        ],
+      };
+
+      const { utxosCreated, utxosSpent } = blockfrost.extractUtxoDeltas(txUtxos, 'tx3', new Set([watched]));
+
+      expect(utxosCreated).toEqual([]);
+      expect(utxosSpent).toEqual([]);
+    });
+
+    it('captures referenceScriptHash when present', () => {
+      const txUtxos = {
+        hash: 'tx4',
+        inputs: [],
+        outputs: [{
+          output_index: 0,
+          address: watched,
+          amount: [{ unit: 'lovelace', quantity: '4000000' }],
+          reference_script_hash: 'abcdef',
+        }],
+      };
+
+      const { utxosCreated } = blockfrost.extractUtxoDeltas(txUtxos, 'tx4', new Set([watched]));
+
+      expect(utxosCreated[0].referenceScriptHash).toBe('abcdef');
+      expect(utxosCreated[0].inlineDatumHex).toBeUndefined();
+    });
+  });
+
+  describe('fetchPolicyAssetEvents', () => {
+    const policyId = '8d18d786e92776c824607fd8e193ec535c79dc61ea2405ddf3b09fe3';
+    const assetNameHex = '444a4544';
+    const fullAssetId = policyId + assetNameHex;
+
+    beforeEach(() => {
+      blockfrost.initializeClient({
+        blockfrostApiKey: 'test-key',
+        network: 'mainnet',
+      });
+    });
+
+    it('returns null when the policy exceeds the asset cap and emits a warning', async () => {
+      // 5 assets with a cap of 4 — should bail.
+      mockBlockfrostMethods.assetsPolicyByIdAll.mockResolvedValue(
+        Array.from({ length: 5 }, (_, i) => ({ asset: policyId + i.toString(16).padStart(2, '0'), quantity: '1' }))
+      );
+
+      const out = await blockfrost.fetchPolicyAssetEvents(policyId, null, 4);
+
+      expect(out).toBeNull();
+      expect(mockLogger.warn).toHaveBeenCalledWith(
+        expect.stringContaining('5 assets (cap: 4)')
+      );
+      // History was never fetched — we bailed early.
+      expect(mockBlockfrostMethods.assetsHistoryAll).not.toHaveBeenCalled();
+    });
+
+    it('returns an empty list when the policy has no assets', async () => {
+      mockBlockfrostMethods.assetsPolicyByIdAll.mockResolvedValue([]);
+
+      const out = await blockfrost.fetchPolicyAssetEvents(policyId, null, 100);
+
+      expect(out).toEqual([]);
+    });
+
+    it('projects mint and burn rows into PolicyAssetEvent shape', async () => {
+      mockBlockfrostMethods.assetsPolicyByIdAll.mockResolvedValue([
+        { asset: fullAssetId, quantity: '1000000' },
+      ]);
+      mockBlockfrostMethods.assetsHistoryAll.mockResolvedValue([
+        { tx_hash: 'mint_tx', action: 'minted', amount: '1000000' },
+        { tx_hash: 'burn_tx', action: 'burned', amount: '500000' },
+      ]);
+      mockBlockfrostMethods.txs
+        .mockResolvedValueOnce({ block_height: 105 })
+        .mockResolvedValueOnce({ block_height: 110 });
+
+      const out = await blockfrost.fetchPolicyAssetEvents(policyId, null, 100);
+
+      expect(out).toEqual([
+        { policyId, assetNameHex, quantity: '1000000', action: 'minted', txHash: 'mint_tx', blockHeight: 105 },
+        { policyId, assetNameHex, quantity: '500000',  action: 'burned', txHash: 'burn_tx', blockHeight: 110 },
+      ]);
+    });
+
+    it('drops events at or below the cursor block', async () => {
+      mockBlockfrostMethods.assetsPolicyByIdAll.mockResolvedValue([
+        { asset: fullAssetId, quantity: '1' },
+      ]);
+      mockBlockfrostMethods.assetsHistoryAll.mockResolvedValue([
+        { tx_hash: 'old_tx', action: 'minted', amount: '1' },
+        { tx_hash: 'new_tx', action: 'minted', amount: '2' },
+      ]);
+      mockBlockfrostMethods.txs
+        .mockResolvedValueOnce({ block_height: 100 })
+        .mockResolvedValueOnce({ block_height: 110 });
+
+      const out = await blockfrost.fetchPolicyAssetEvents(policyId, 100, 100);
+
+      expect(out).toHaveLength(1);
+      expect(out![0].txHash).toBe('new_tx');
+    });
+
+    it('caches per-tx block lookups across assets', async () => {
+      // Same tx hash appears in two assets — should hit txs() once, not twice.
+      const otherAsset = policyId + '5348454e';
+      mockBlockfrostMethods.assetsPolicyByIdAll.mockResolvedValue([
+        { asset: fullAssetId, quantity: '1' },
+        { asset: otherAsset,  quantity: '1' },
+      ]);
+      mockBlockfrostMethods.assetsHistoryAll
+        .mockResolvedValueOnce([{ tx_hash: 'shared_tx', action: 'minted', amount: '1' }])
+        .mockResolvedValueOnce([{ tx_hash: 'shared_tx', action: 'minted', amount: '2' }]);
+      mockBlockfrostMethods.txs.mockResolvedValue({ block_height: 200 });
+
+      const out = await blockfrost.fetchPolicyAssetEvents(policyId, null, 100);
+
+      expect(mockBlockfrostMethods.txs).toHaveBeenCalledTimes(1);
+      expect(out).toHaveLength(2);
+    });
+
+  });
+
+  describe('parseAssetFilter', () => {
+    it('returns null for null/empty/invalid input', () => {
+      expect(blockfrost.parseAssetFilter(null)).toBeNull();
+      expect(blockfrost.parseAssetFilter(undefined)).toBeNull();
+      expect(blockfrost.parseAssetFilter('')).toBeNull();
+      expect(blockfrost.parseAssetFilter('not json')).toBeNull();
+      expect(blockfrost.parseAssetFilter('{}')).toBeNull();
+      expect(blockfrost.parseAssetFilter('[]')).toBeNull();
+    });
+
+    it('parses a valid asset-filter JSON array', () => {
+      const json = '[{"policyId":"abc","assetNameHex":"01"},{"policyId":"def","assetNameHex":""}]';
+      expect(blockfrost.parseAssetFilter(json)).toEqual([
+        { policyId: 'abc', assetNameHex: '01' },
+        { policyId: 'def', assetNameHex: '' },
+      ]);
+    });
+  });
+
+  describe('matchesAssetFilter', () => {
+    const make = (assets: Array<{ unit: string; quantity: string }>) => ({
+      txHash: 't', outputIndex: 0, lovelace: '1', assets,
+    });
+
+    it('returns true for null filter (no filter applied)', () => {
+      expect(blockfrost.matchesAssetFilter([], null)).toBe(true);
+      expect(blockfrost.matchesAssetFilter([make([])], null)).toBe(true);
+    });
+
+    it('returns false for empty utxosCreated when filter is non-null', () => {
+      expect(blockfrost.matchesAssetFilter([], [{ policyId: 'abc', assetNameHex: '01' }])).toBe(false);
+    });
+
+    it('returns true when at least one utxo holds a listed asset', () => {
+      const utxos = [
+        make([{ unit: 'unrelated_asset', quantity: '1' }]),
+        make([{ unit: 'abc01', quantity: '5' }, { unit: 'other', quantity: '1' }]),
+      ];
+      expect(
+        blockfrost.matchesAssetFilter(utxos, [{ policyId: 'abc', assetNameHex: '01' }])
+      ).toBe(true);
+    });
+
+    it('returns false when no utxo holds any listed asset', () => {
+      const utxos = [
+        make([{ unit: 'xyz99', quantity: '1' }]),
+        make([{ unit: 'aaa00', quantity: '1' }]),
+      ];
+      expect(
+        blockfrost.matchesAssetFilter(utxos, [{ policyId: 'abc', assetNameHex: '01' }])
+      ).toBe(false);
+    });
+
+    it('matches an empty asset name (single-asset policy like a stablecoin)', () => {
+      const utxos = [make([{ unit: 'abc', quantity: '1' }])];
+      expect(
+        blockfrost.matchesAssetFilter(utxos, [{ policyId: 'abc', assetNameHex: '' }])
+      ).toBe(true);
     });
   });
 });

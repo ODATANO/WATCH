@@ -37,7 +37,8 @@ const mockWatcher = {
   stop: jest.fn<any>(),
 };
 
-jest.mock('../../src/index', () => mockWatcher);
+// Match the dynamic-import target in plugin.ts (`./index.js`).
+jest.mock('../../src/index.js', () => mockWatcher);
 
 describe('Plugin Module', () => {
   beforeEach(() => {

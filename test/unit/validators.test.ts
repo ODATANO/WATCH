@@ -7,6 +7,11 @@ import {
   isPositiveInteger,
   isNonNegativeInteger,
   isNonEmptyString,
+  isPaymentCredHex,
+  isPolicyId,
+  isAssetNameHex,
+  isAssetFilterJson,
+  isCoalesceMs,
 } from '../../srv/utils/validators';
 
 describe('Validators', () => {
@@ -160,6 +165,110 @@ describe('Validators', () => {
       expect(isNonEmptyString(null)).toBe(false);
       expect(isNonEmptyString(undefined)).toBe(false);
       expect(isNonEmptyString({})).toBe(false);
+    });
+  });
+
+  describe('isPaymentCredHex', () => {
+    it('accepts a 56-char hex string', () => {
+      expect(isPaymentCredHex('0805d8541db33f4841585fed4c3a7e87e2ff7018243038f06ceb660c')).toBe(true);
+      expect(isPaymentCredHex('A'.repeat(56))).toBe(true);
+    });
+
+    it('rejects wrong-length, non-hex, or non-string inputs', () => {
+      expect(isPaymentCredHex('abc')).toBe(false);
+      expect(isPaymentCredHex('z'.repeat(56))).toBe(false);
+      expect(isPaymentCredHex('a'.repeat(55))).toBe(false);
+      expect(isPaymentCredHex('a'.repeat(57))).toBe(false);
+      expect(isPaymentCredHex(null)).toBe(false);
+      expect(isPaymentCredHex(123)).toBe(false);
+    });
+  });
+
+  describe('isPolicyId', () => {
+    it('accepts a 56-char hex string', () => {
+      expect(isPolicyId('8d18d786e92776c824607fd8e193ec535c79dc61ea2405ddf3b09fe3')).toBe(true);
+    });
+
+    it('rejects wrong-length or non-hex inputs', () => {
+      expect(isPolicyId('not-hex')).toBe(false);
+      expect(isPolicyId('a'.repeat(55))).toBe(false);
+      expect(isPolicyId(null)).toBe(false);
+    });
+  });
+
+  describe('isAssetNameHex', () => {
+    it('accepts hex strings up to 64 chars, including empty', () => {
+      expect(isAssetNameHex('')).toBe(true);
+      expect(isAssetNameHex('444a4544')).toBe(true);
+      expect(isAssetNameHex('a'.repeat(64))).toBe(true);
+    });
+
+    it('rejects strings longer than 64 chars or non-hex content', () => {
+      expect(isAssetNameHex('a'.repeat(65))).toBe(false);
+      expect(isAssetNameHex('zzzz')).toBe(false);
+      expect(isAssetNameHex(null)).toBe(false);
+    });
+  });
+
+  describe('isAssetFilterJson', () => {
+    const validPolicy = '8d18d786e92776c824607fd8e193ec535c79dc61ea2405ddf3b09fe3';
+
+    it('accepts a non-empty array of valid {policyId, assetNameHex} entries', () => {
+      expect(isAssetFilterJson(JSON.stringify([
+        { policyId: validPolicy, assetNameHex: '444a4544' },
+      ]))).toBe(true);
+      expect(isAssetFilterJson(JSON.stringify([
+        { policyId: validPolicy, assetNameHex: '' },
+        { policyId: validPolicy, assetNameHex: 'a'.repeat(64) },
+      ]))).toBe(true);
+    });
+
+    it('rejects malformed JSON', () => {
+      expect(isAssetFilterJson('{not json')).toBe(false);
+      expect(isAssetFilterJson('')).toBe(false);
+      expect(isAssetFilterJson(null)).toBe(false);
+      expect(isAssetFilterJson(123)).toBe(false);
+    });
+
+    it('rejects an empty array', () => {
+      expect(isAssetFilterJson('[]')).toBe(false);
+    });
+
+    it('rejects entries missing required fields', () => {
+      expect(isAssetFilterJson(JSON.stringify([{ policyId: validPolicy }]))).toBe(false);
+      expect(isAssetFilterJson(JSON.stringify([{ assetNameHex: '01' }]))).toBe(false);
+    });
+
+    it('rejects entries with invalid hex shapes', () => {
+      expect(isAssetFilterJson(JSON.stringify([{ policyId: 'too-short', assetNameHex: '' }]))).toBe(false);
+      expect(isAssetFilterJson(JSON.stringify([{ policyId: validPolicy, assetNameHex: 'a'.repeat(65) }]))).toBe(false);
+      expect(isAssetFilterJson(JSON.stringify([{ policyId: validPolicy, assetNameHex: 'zz' }]))).toBe(false);
+    });
+
+    it('rejects non-object array entries', () => {
+      expect(isAssetFilterJson(JSON.stringify(['oops']))).toBe(false);
+      expect(isAssetFilterJson(JSON.stringify([null]))).toBe(false);
+    });
+  });
+
+  describe('isCoalesceMs', () => {
+    it('accepts positive integers up to 300000', () => {
+      expect(isCoalesceMs(1)).toBe(true);
+      expect(isCoalesceMs(2000)).toBe(true);
+      expect(isCoalesceMs(300_000)).toBe(true);
+    });
+
+    it('rejects zero, negative, and too-large values', () => {
+      expect(isCoalesceMs(0)).toBe(false);
+      expect(isCoalesceMs(-1)).toBe(false);
+      expect(isCoalesceMs(300_001)).toBe(false);
+    });
+
+    it('rejects non-integer numbers and non-numbers', () => {
+      expect(isCoalesceMs(1.5)).toBe(false);
+      expect(isCoalesceMs('2000')).toBe(false);
+      expect(isCoalesceMs(null)).toBe(false);
+      expect(isCoalesceMs(undefined)).toBe(false);
     });
   });
 });

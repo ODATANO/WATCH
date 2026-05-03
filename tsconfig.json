@@ -1,15 +1,17 @@
 {
   "compilerOptions": {
     "target": "ES2022",
-    "module": "commonjs",
-    "lib": ["ES2022"],
+    "module": "node16",
+    "lib": [
+      "ES2022"
+    ],
     "rootDir": ".",
     "outDir": "./dist",
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
-    "moduleResolution": "node",
+    "moduleResolution": "node16",
     "resolveJsonModule": true,
     "declaration": true,
     "declarationMap": true,
@@ -19,21 +21,19 @@
     "noImplicitReturns": true,
     "noFallthroughCasesInSwitch": true,
     "allowSyntheticDefaultImports": true,
-
     // CAP-specific options (required for decorators like @Entity, etc.)
     "experimentalDecorators": true,
     "emitDecoratorMetadata": true,
-
     // Stronger type safety
     "noImplicitAny": true
   },
   "include": [
-    "src/**/*"           // All TypeScript source code
+    "src/**/*" // All TypeScript source code
   ],
   "exclude": [
     "node_modules",
     "dist",
-    "**/*.test.ts",      // Exclude test files
-    "example"            // Exclude local demo/example folder
+    "**/*.test.ts", // Exclude test files
+    "example" // Exclude local demo/example folder
   ]
 }

@@ -62,6 +62,14 @@ export async function startTransactionPolling(): Promise<void> {
   return watcher.startTransactionPolling();
 }
 
+export async function startCredentialPolling(): Promise<void> {
+  return watcher.startCredentialPolling();
+}
+
+export async function startPolicyPolling(): Promise<void> {
+  return watcher.startPolicyPolling();
+}
+
 /**
  * Stop individual polling paths
  */
@@ -71,6 +79,14 @@ export async function stopAddressPolling(): Promise<void> {
 
 export async function stopTransactionPolling(): Promise<void> {
   return watcher.stopTransactionPolling();
+}
+
+export async function stopCredentialPolling(): Promise<void> {
+  return watcher.stopCredentialPolling();
+}
+
+export async function stopPolicyPolling(): Promise<void> {
+  return watcher.stopPolicyPolling();
 }
 
 /**
@@ -89,13 +105,58 @@ export function getConfig(): CardanoWatcherConfig {
 
 // Export types
 export type { CardanoWatcherConfig } from "./config";
-export type { TransactionInfo, AddressInfo } from "./blockfrost";
+export type {
+  TransactionInfo,
+  AddressInfo,
+  WatchedUtxo,
+  WatchedAsset,
+  SpentUtxoRef,
+  PolicyAssetEvent,
+  AssetFilterEntry,
+} from "./blockfrost";
+import type { WatchedUtxo, SpentUtxoRef } from "./blockfrost";
 
 // Event payload types
 export interface NewTransactionsEvent {
   address: string;
+  tag?: string;
   count: number;
   transactions: string[];
+  utxosCreated: WatchedUtxo[];
+  utxosSpent: SpentUtxoRef[];
+}
+
+export interface CredentialNewTransactionsEvent {
+  paymentCredHex: string;
+  tag?: string;
+  count: number;
+  transactions: string[];
+  utxosCreated: WatchedUtxo[];
+  utxosSpent: SpentUtxoRef[];
+  blockHeight: number;
+}
+
+export interface PolicyAssetMintedEvent {
+  policyId: string;
+  tag?: string;
+  assetNameHex: string;
+  quantity: string;
+  txHash: string;
+  blockHeight: number;
+}
+
+export type PolicyAssetBurnedEvent = PolicyAssetMintedEvent;
+
+/**
+ * Rollback event (Phase 2 / Ogmios backend only). Fired when the upstream
+ * chain rolls back past previously-emitted txs. `affectedTxHashes` lists
+ * the distinct txs that were persisted under `backend: 'ogmios'` and have
+ * now been orphaned and deleted from `BlockchainEvent`.
+ */
+export interface RollbackEvent {
+  fromSlot: number;
+  toSlot: number;
+  affectedTxHashes: string[];
 }
 
 export interface TxConfirmedEvent {
