@@ -1,64 +1,64 @@
-# Development files
-src/
+# The in-place build (tsconfig.build.json) compiles src/*.ts → src/*.js and
+# srv/*.ts → srv/*.js. We ship the compiled .js + .d.ts; strip the .ts source
+# and dev-only artifacts from the published tarball.
+
+# TypeScript sources (keep .d.ts declarations, drop everything else)
+src/**/*.ts
+!src/**/*.d.ts
+srv/**/*.ts
+!srv/**/*.d.ts
+
+# Source maps + buildinfo
+**/*.ts.map
+**/*.d.ts.map
+**/*.js.map
+*.tsbuildinfo
+
+# Test files
 test/
-coverage/
-*.test.ts
-*.spec.ts
+**/*.test.ts
+**/*.spec.ts
 
-# Config files
-.env
-.env.example
-.env.*
+# Configs not needed by consumers
 tsconfig.json
+tsconfig.build.json
 jest.config.js
+eslint.config.mjs
+.eslintrc*
+.prettierrc*
+.editorconfig
+.env
+.env.*
 
-# IDE
+# Dev-only directories
+docs/
+.github/
+.gitlab-ci.yml
+.travis.yml
+coverage/
+gen/
+dist/
+example/
+demo/
+scripts/
+tmp/
+temp/
+
+# IDE / OS noise
 .vscode/
 .claude/
 .idea/
 *.swp
 *.swo
 *~
-
-# OS files
 .DS_Store
 Thumbs.db
 
-# Build artifacts
-*.log
-*.tsbuildinfo
-
-# Git
+# Repo-private files
 .git/
 .gitignore
 .gitattributes
-
-# CI/CD
-.github/
-.gitlab-ci.yml
-.travis.yml
-
-# Documentation (keep only in README)
-docs/
-
-# Scripts
-scripts/
-
-# Database files
+*.log
 *.db
 *.sqlite
-
-# Generated files (keep dist/ but exclude source maps in production if desired)
-# dist/**/*.map
-
-# Lock files (users should use their own)
-# package-lock.json
-# yarn.lock
-
-# Example/Demo files
-example/
-demo/
-
-# Temporary files
-tmp/
-temp/
+IMPROVEMENTS.md

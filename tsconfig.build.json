@@ -1,0 +1,24 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    // Compile in-place: src/foo.ts → src/foo.js, srv/foo.ts → srv/foo.js.
+    // CAP's `@impl` resolves package-qualified paths (`@odatano/watch/srv/admin-service`)
+    // and Node's resolver picks `srv/admin-service.js` first, so the compiled
+    // JS must live alongside the .ts/.cds source.
+    "outDir": ".",
+    // Source maps + .d.ts.map are dev-time noise in the published tarball.
+    "sourceMap": false,
+    "declarationMap": false
+  },
+  "include": [
+    "src/**/*",
+    "srv/**/*"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "**/*.test.ts",
+    "example",
+    "test"
+  ]
+}

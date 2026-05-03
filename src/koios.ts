@@ -92,26 +92,35 @@ async function postJsonPaginated<T>(path: string, body: unknown): Promise<T[]> {
   return all;
 }
 
-interface KoiosAddressEntry {
-  payment_address: string;
-  stake_address?: string | null;
+interface KoiosUtxoRow {
+  tx_hash?: string;
+  tx_index?: number;
+  address: string;
+  // Other fields exist (value, asset_list, etc.) — we only need `address`.
 }
 
 /**
- * Resolve a payment credential to the set of bech32 addresses that share it.
- * The credential is a 28-byte payment-key hash (or script hash) as 56-char hex.
+ * Resolve a payment credential to the set of bech32 addresses currently
+ * holding UTxOs at it. The credential is a 28-byte payment-key hash (or
+ * script hash) as 56-char hex.
  *
- * Returns ALL bech32 addresses Koios has seen for that credential — every
- * (payment_cred, stake_cred) combination lives at its own bech32. For shared
- * scripts (Indigo CDP, Minswap V2 pools) this set can be large.
+ * Koios has no `/credential_address` endpoint — `/credential_utxos` is the
+ * only path. Each row is one UTxO; we dedup by `address`. For shared scripts
+ * (Indigo CDP, Minswap V2 pools) this set can still be large.
+ *
+ * Caveat: this returns only currently-unspent addresses. An address that
+ * previously held a UTxO at this credential but has since been emptied is
+ * not returned. For the credential-watching use case (`processCredential` /
+ * the Ogmios watcher's address-set filter), this is sufficient — any active
+ * activity at the credential surfaces a current UTxO somewhere.
  */
 export async function getAddressesByCredential(credHex: string): Promise<string[]> {
-  const data = await postJson<KoiosAddressEntry[]>("/credential_address", {
+  const data = await postJsonPaginated<KoiosUtxoRow>("/credential_utxos", {
     _payment_credentials: [credHex],
   });
   const seen = new Set<string>();
   for (const row of data) {
-    if (row.payment_address) seen.add(row.payment_address);
+    if (row.address) seen.add(row.address);
   }
   return [...seen];
 }

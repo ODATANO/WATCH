@@ -1,12 +1,13 @@
 {
   "name": "@odatano/watch",
-  "version": "0.1.4",
+  "version": "0.1.6",
   "description": "CAP Plugin for deterministic monitoring of Cardano blockchain events and transactions (via Blockfrost)",
-  "main": "dist/src/index.js",
-  "types": "dist/src/index.d.ts",
+  "main": "src/index.js",
+  "types": "src/index.d.ts",
   "scripts": {
-    "build": "tsc",
-    "build:watch": "tsc --watch",
+    "build": "tsc -p tsconfig.build.json",
+    "build:watch": "tsc -p tsconfig.build.json --watch",
+    "build:typecheck": "tsc --noEmit",
     "cds:types": "cds-typer \"*\" --outputDirectory @cds-models",
     "prepare": "npm run cds:types && npm run build",
     "test": "jest",
@@ -47,11 +48,17 @@
   "files": [
     "cds-plugin.js",
     "index.cds",
-    "dist/",
-    "db/",
-    "srv/",
+    "src/**/*.js",
+    "src/**/*.d.ts",
+    "srv/**/*.js",
+    "srv/**/*.d.ts",
+    "srv/**/*.cds",
+    "@cds-models/**/*.js",
+    "@cds-models/**/*.d.ts",
+    "db/**/*.cds",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "CHANGELOG.md"
   ],
   "dependencies": {
     "@blockfrost/blockfrost-js": "^6.1.0",

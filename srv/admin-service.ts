@@ -2,6 +2,7 @@ import cds, { Request, Service } from "@sap/cds";
 const { SELECT, INSERT, UPDATE } = cds.ql;
 import * as watcher from "../src/watcher";
 import * as backfill from "../src/backfill";
+import * as blockfrost from "../src/blockfrost";
 import { initialize as initializeWatcher } from "../src/index";
 import { rejectMissing, rejectInvalid } from './utils/errors';
 import { isValidBech32Address, isValidNetwork, isTxHash, isPaymentCredHex, isPolicyId, isAssetFilterJson, isCoalesceMs, isWatchScope } from './utils/validators';
@@ -16,19 +17,49 @@ initializeWatcher().catch((err: Error) => {
 });
 
 /**
+ * Pick the initial `lastCheckedBlock` for a freshly-added watch.
+ *
+ * Default: current Blockfrost tip. This prevents the genesis-backfill
+ * stampede on hot script credentials (Minswap V2, etc.) that would
+ * otherwise hit Koios's pagination cap on the first poll.
+ *
+ * Under Ogmios mode we return null instead — the post-add backfill path
+ * caps at the chainSync cursor; pre-setting `lastCheckedBlock = tip`
+ * would short-circuit it.
+ *
+ * Returns null if Blockfrost is unavailable or tip lookup fails — caller
+ * falls back to "no cursor" semantics.
+ */
+async function pickInitialCursor(): Promise<number | null> {
+  if (watcher.getStatus().config.backend === "ogmios") return null;
+  if (!blockfrost.isAvailable()) return null;
+  try {
+    const tip = await blockfrost.getLatestBlock();
+    return tip?.height ?? null;
+  } catch (err) {
+    logger.warn("Failed to fetch Blockfrost tip for initial cursor; falling back to null:", err);
+    return null;
+  }
+}
+
+/**
  * Cardano Watcher Admin Service Implementation
  * Manages blockchain address monitoring and transaction tracking
  */
 module.exports = (srv: cds.Service) => {
   logger.info("Cardano Watcher Admin Service Module loaded - registering handlers");
   
+  // Use a literal relative path (not `#cds-models/...`) so consumers don't
+  // need to mirror an `imports` field in their own package.json. The build
+  // ships @cds-models/ at the package root; admin-service.js is at srv/
+  // after in-place compile, so `../@cds-models/...` resolves correctly.
   const {
     WatchedAddresses,
     WatchedCredentials,
     WatchedPolicies,
     TransactionSubmissions,
     BlockchainEvents,
-  } = require('#cds-models/CardanoWatcherAdminService');
+  } = require('../@cds-models/CardanoWatcherAdminService/index.js');
 
   // ---------------------------------------------------------------------------
   // Watcher Control Actions
@@ -142,7 +173,9 @@ module.exports = (srv: cds.Service) => {
         return rejectInvalid('addWatchedAddress', `Address ${address} is already being watched`, 'address');
       }
 
-      // create new watch entry
+      // create new watch entry — initial cursor is current Blockfrost tip
+      // (or null under Ogmios mode, so backfill can run from chainSync cap).
+      const initialCursor = await pickInitialCursor();
       const watchedAddressEntry: WatchedAddress = {
         address,
         description: description || null,
@@ -151,12 +184,12 @@ module.exports = (srv: cds.Service) => {
         coalesceMs: coalesceMs ?? null,
         network: network || watcher.getStatus().config.network || 'preview',
         active: true,
-        lastCheckedBlock: null,
+        lastCheckedBlock: initialCursor,
       };
 
       const result = await db.run(INSERT.into(WatchedAddresses).entries(watchedAddressEntry));
 
-      logger.info({ address, tag, includesAssetsJson, coalesceMs, result }, "Added watched address");
+      logger.info({ address, tag, includesAssetsJson, coalesceMs, initialCursor, result }, "Added watched address");
 
       // Phase 2: under Ogmios mode, kick off Blockfrost backfill in the
       // background so the watch sees its history. Don't block the request.
@@ -220,6 +253,7 @@ module.exports = (srv: cds.Service) => {
         return rejectInvalid('addWatchedCredential', `Credential ${paymentCredHex} is already being watched`, 'paymentCredHex');
       }
 
+      const initialCursor = await pickInitialCursor();
       const entry: WatchedCredential = {
         paymentCredHex,
         description: description || null,
@@ -228,12 +262,12 @@ module.exports = (srv: cds.Service) => {
         coalesceMs: coalesceMs ?? null,
         network: network || watcher.getStatus().config.network || 'preview',
         active: true,
-        lastCheckedBlock: null,
+        lastCheckedBlock: initialCursor,
       };
 
       const result = await db.run(INSERT.into(WatchedCredentials).entries(entry));
 
-      logger.info({ paymentCredHex, tag, includesAssetsJson, coalesceMs, result }, "Added watched credential");
+      logger.info({ paymentCredHex, tag, includesAssetsJson, coalesceMs, initialCursor, result }, "Added watched credential");
 
       if (watcher.getStatus().config.backend === "ogmios") {
         backfill.backfillCredential(paymentCredHex).catch((err: Error) =>
@@ -287,18 +321,19 @@ module.exports = (srv: cds.Service) => {
         return rejectInvalid('addWatchedPolicy', `Policy ${policyId} is already being watched`, 'policyId');
       }
 
+      const initialCursor = await pickInitialCursor();
       const entry: WatchedPolicy = {
         policyId,
         description: description || null,
         tag: tag || null,
         network: network || watcher.getStatus().config.network || 'preview',
         active: true,
-        lastCheckedBlock: null,
+        lastCheckedBlock: initialCursor,
       };
 
       const result = await db.run(INSERT.into(WatchedPolicies).entries(entry));
 
-      logger.info({ policyId, tag, result }, "Added watched policy");
+      logger.info({ policyId, tag, initialCursor, result }, "Added watched policy");
 
       if (watcher.getStatus().config.backend === "ogmios") {
         backfill.backfillPolicy(policyId).catch((err: Error) =>

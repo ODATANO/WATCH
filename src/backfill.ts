@@ -8,6 +8,7 @@ import {
   parseAssetFilter,
   matchesAssetFilter,
 } from "./blockfrost";
+import type { WatchedUtxo, SpentUtxoRef } from "./blockfrost";
 import {
   BlockchainEvent,
   WatchedAddresses,
@@ -181,8 +182,8 @@ export async function backfillCredential(paymentCredHex: string): Promise<void> 
   }
 
   const filter = parseAssetFilter(watch.includesAssetsJson);
-  const aggregatedCreated: ReturnType<typeof parseAssetFilter> extends infer _ ? import('./blockfrost').WatchedUtxo[] : never = [];
-  const aggregatedSpent: import('./blockfrost').SpentUtxoRef[] = [];
+  const aggregatedCreated: WatchedUtxo[] = [];
+  const aggregatedSpent: SpentUtxoRef[] = [];
   const matchedTxs: typeof newTxs = [];
   let maxBlock = watch.lastCheckedBlock ?? 0;
 

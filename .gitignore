@@ -12,5 +12,14 @@ gen/
 *watch.db*
 .claude/
 
+# In-place build artifacts from `tsconfig.build.json` (outDir: ".")
+# The compiler emits .js + .d.ts next to .ts source in src/ and srv/.
+# These ship in the npm tarball but should never be tracked in git.
+src/**/*.js
+src/**/*.d.ts
+srv/**/*.js
+srv/**/*.d.ts
+!srv/**/*.cds
 
-# Note: cds-plugin.js is a source file (plain JS), not generated from TS 
+# Note: cds-plugin.js is a source file (plain JS), not generated from TS
+!cds-plugin.js

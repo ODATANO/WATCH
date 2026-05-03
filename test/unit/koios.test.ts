@@ -46,17 +46,17 @@ describe('Koios client', () => {
       koios.initializeClient({ network: 'mainnet', koiosApiKey: 'k_test' });
     });
 
-    it('hits the mainnet base URL and forwards the bearer token', async () => {
+    it('hits the mainnet credential_utxos endpoint and forwards the bearer token', async () => {
       fetchMock.mockResolvedValueOnce(jsonResponse([
-        { payment_address: 'addr1qx1', stake_address: 'stake1' },
-        { payment_address: 'addr1qx2', stake_address: 'stake2' },
+        { tx_hash: 'tx1', tx_index: 0, address: 'addr1qx1' },
+        { tx_hash: 'tx2', tx_index: 1, address: 'addr1qx2' },
       ]));
 
       const out = await koios.getAddressesByCredential('a'.repeat(56));
 
       expect(out).toEqual(['addr1qx1', 'addr1qx2']);
       const [url, init] = fetchMock.mock.calls[0];
-      expect(String(url)).toBe('https://api.koios.rest/api/v1/credential_address');
+      expect(String(url)).toBe('https://api.koios.rest/api/v1/credential_utxos');
       expect((init as RequestInit).method).toBe('POST');
       const headers = (init as RequestInit).headers as Record<string, string>;
       expect(headers['Authorization']).toBe('Bearer k_test');
@@ -72,16 +72,16 @@ describe('Koios client', () => {
       await koios.getAddressesByCredential('b'.repeat(56));
 
       const [url, init] = fetchMock.mock.calls[0];
-      expect(String(url)).toBe('https://preprod.koios.rest/api/v1/credential_address');
+      expect(String(url)).toBe('https://preprod.koios.rest/api/v1/credential_utxos');
       const headers = (init as RequestInit).headers as Record<string, string>;
       expect(headers['Authorization']).toBeUndefined();
     });
 
-    it('deduplicates payment_address entries', async () => {
+    it('deduplicates addresses across multiple UTxOs at the same address', async () => {
       fetchMock.mockResolvedValueOnce(jsonResponse([
-        { payment_address: 'addr1qsame' },
-        { payment_address: 'addr1qsame' },
-        { payment_address: 'addr1qother' },
+        { tx_hash: 't1', tx_index: 0, address: 'addr1qsame' },
+        { tx_hash: 't2', tx_index: 0, address: 'addr1qsame' },
+        { tx_hash: 't3', tx_index: 0, address: 'addr1qother' },
       ]));
 
       const out = await koios.getAddressesByCredential('c'.repeat(56));

@@ -5,6 +5,43 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.6] - 2026-05-03
+
+Hotfix release. 0.1.5 shipped with a stale path in the CAP plugin entry — the package boot-crashes on `npm install` for any consumer.
+
+### Fixed
+
+- **`cds-plugin.js` references the pre-0.1.5 layout** (Blocker). The 0.1.5 packaging migration updated `package.json.main` from `dist/src/index.js` to `src/index.js`, but `cds-plugin.js` (a separate CAP plugin entry, not generated from TS) was missed and still required `./dist/src/plugin` — a path that no longer exists after the in-place build. Result: `MODULE_NOT_FOUND` on every CAP startup. One-line fix to `require('./src/plugin')`.
+
+### Maintenance
+
+- `.gitignore`: ignore the in-place build artifacts (`src/**/*.js`, `src/**/*.d.ts`, `srv/**/*.js`, `srv/**/*.d.ts`) so they're shipped in the npm tarball but not tracked in git.
+
+## [0.1.5] - 2026-05-03
+
+Bugfix release covering four blocker/major issues that prevented a clean out-of-the-box experience after the 0.1.4 feature wave. No new features.
+
+### Fixed
+
+- **Packaging — `srv/admin-service` not loadable from a fresh install** (Blocker). Previous tarball shipped `srv/admin-service.ts` only; CAP's `@impl: '@odatano/watch/srv/admin-service'` couldn't resolve a `.js` file. Switched to in-place compilation via new `tsconfig.build.json` (`outDir: "."`). Now `srv/admin-service.js` ships alongside the source.
+- **Packaging — `#cds-models/...` runtime require failed for consumers** (Blocker). Replaced `require('#cds-models/CardanoWatcherAdminService')` with literal relative path `require('../@cds-models/CardanoWatcherAdminService/index.js')`. `@cds-models/` directory now ships in the tarball. Consumers no longer need to mirror an `imports` field in their own `package.json`.
+- **Koios endpoint `/credential_address` does not exist** (Blocker). `getAddressesByCredential` now hits `/credential_utxos` (the only Koios endpoint that returns addresses for a credential), dedups by `row.address`, and paginates via `Range` header. Caveat: returns only currently-unspent addresses — sufficient for credential watching's filter-set use case.
+- **Hot script credentials triggered genesis-backfill stampede** (Major). `addWatchedAddress` / `addWatchedCredential` / `addWatchedPolicy` now default `lastCheckedBlock` to the current Blockfrost tip (was `null`, which made the first poll fetch from genesis). Hits Koios's pagination cap on creds with millions of historical txs (Minswap V2, etc.) are no longer the OOTB experience. Under Ogmios mode the cursor stays `null` so the chainSync-cap'd backfill can still run.
+- **`backfill.ts` ESLint failure** — overengineered `infer _` conditional type replaced with direct type imports.
+
+### Changed
+
+- **Build pipeline**: `tsc` → `tsc -p tsconfig.build.json`. New `build:typecheck` script runs the original (no-emit) tsc for IDE-style verification.
+- **`package.json`**:
+  - `main`: `dist/src/index.js` → `src/index.js`
+  - `types`: `dist/src/index.d.ts` → `src/index.d.ts`
+  - `files` array: explicit globs (`*.js`, `*.d.ts`, `*.cds`) instead of directory entries — strips `.ts` source from the published tarball (65 → 45 files).
+- **TypeScript module resolution**: `moduleResolution: "node"` (deprecated alias) → `"node16"`. `module` aligned to `"node16"`. Two dynamic `import('./index')` calls in `src/plugin.ts` updated to `import('./index.js')`. Jest gains a `moduleNameMapper` to strip `.js` suffixes back to TS source for compile-on-the-fly tests.
+
+### Breaking (semantic)
+
+- **Watch-add no longer backfills history by default.** A freshly-added watch sees only forward activity (from the current Blockfrost tip onward). This is the corrected behavior — previous "default to genesis" caused the OOTB stampede. Consumers needing history can call `backfill.backfillAddress()` / `backfillCredential()` / `backfillPolicy()` programmatically, or PATCH the watch entity to set an earlier `lastCheckedBlock`.
+
 ## [0.1.4] - 2026-05-03
 
 ### Added
