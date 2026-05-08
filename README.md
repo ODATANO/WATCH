@@ -35,6 +35,19 @@ npm add @odatano/watch
 
 Credential and policy watching are off by default — opt in via `credentialPolling` / `policyPolling`. Credential watching also needs a (free-tier-OK) Koios endpoint. See [Quick Start](docs/QUICKSTART.md) for the full config.
 
+### Secrets via environment variables
+
+To keep the API key out of `package.json`, leave the field unset and export the env var instead — the plugin picks it up as a fallback:
+
+```json
+{ "cds": { "requires": { "watch": { "network": "preview" } } } }
+```
+```bash
+export BLOCKFROST_API_KEY=preview_YOUR_KEY
+```
+
+Other recognized env vars: `BLOCKFROST_CUSTOM_BACKEND`, `KOIOS_API_KEY`, `OGMIOS_URL`, `WATCHER_BACKEND`. `cds.env.requires.watch.<field>` always wins when set.
+
 ### Self-hosted Blockfrost (Dolos / cardano-node)
 
 Polling burns through the Blockfrost free-tier daily quota quickly. To route the SDK at a self-hosted Blockfrost-compatible endpoint instead, set `blockfrostCustomBackend` (and drop `blockfrostApiKey`):

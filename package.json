@@ -1,6 +1,6 @@
 {
   "name": "@odatano/watch",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "description": "CAP Plugin for deterministic monitoring of Cardano blockchain events and transactions (via Blockfrost)",
   "main": "src/index.js",
   "types": "src/index.d.ts",

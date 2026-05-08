@@ -68,15 +68,17 @@ interface CardanoWatcherConfig {
 
 ### Environment Variables
 
-For **plugin development only**, you can use environment variables as fallback:
+The plugin reads these env vars when the matching field is missing from `cds.env.requires.watch`. Lets you keep secrets out of `package.json` entirely — just leave `"watch": {}` (or omit the field) and set the env var:
 
 ```bash
-BLOCKFROST_KEY=mainnet_abc123
+BLOCKFROST_API_KEY=mainnet_abc123
 BLOCKFROST_CUSTOM_BACKEND=http://localhost:3100/api/v0  # optional, self-hosted endpoint
-KOIOS_KEY=optional_koios_token
+KOIOS_API_KEY=optional_koios_token
+OGMIOS_URL=ws://localhost:1337                          # optional
+WATCHER_BACKEND=blockfrost                              # blockfrost | ogmios
 ```
 
-For **production**, configure via `cds.env.requires.watch.blockfrostApiKey` (and `koiosApiKey` when needed).
+`cds.env.requires.watch.<field>` always takes precedence when set. CAP does not substitute `${VAR}` placeholders inside `package.json` — env vars are honored only via the fallback above.
 
 ## Database Setup
 
@@ -100,17 +102,20 @@ cds deploy --dry-run > migration.sql
 }
 ```
 
-**✅ Use environment-based config**:
+**✅ Use environment-based config** (leave the field out and let the plugin pick up the env var):
 ```json
 "watch": {
-  "blockfrostApiKey": "${BLOCKFROST_KEY}"
+  "network": "mainnet"
 }
+```
+```bash
+export BLOCKFROST_API_KEY=mainnet_abc123
 ```
 
 **✅ Kubernetes Secrets**:
 ```yaml
 env:
-  - name: BLOCKFROST_KEY
+  - name: BLOCKFROST_API_KEY
     valueFrom:
       secretKeyRef:
         name: cardano-secrets
@@ -142,11 +147,11 @@ CMD ["npx", "cds", "serve"]
 
 ```bash
 docker run -p 4004:4004 \
-  -e BLOCKFROST_KEY=mainnet_abc123 \
+  -e BLOCKFROST_API_KEY=mainnet_abc123 \
   my-cap-app
 ```
 
-**Note**: The environment variable is used via config: `"blockfrostApiKey": "${BLOCKFROST_KEY}"`
+**Note**: `BLOCKFROST_API_KEY` is read directly by the plugin when `cds.env.requires.watch.blockfrostApiKey` is unset.
 
 ### Cloud Foundry
 
@@ -159,13 +164,11 @@ applications:
 
 Bind secret service:
 ```bash
-cf create-user-provided-service cardano-secrets -p '{"BLOCKFROST_KEY":"mainnet_abc123"}'
+cf create-user-provided-service cardano-secrets -p '{"BLOCKFROST_API_KEY":"mainnet_abc123"}'
 cf bind-service my-app cardano-secrets
 ```
 
-**Note**: Use `"blockfrostApiKey": "${BLOCKFROST_KEY}"` in your config
-cf bind-service my-app cardano-config
-```
+**Note**: The plugin reads `BLOCKFROST_API_KEY` from the process environment as a fallback when `cds.env.requires.watch.blockfrostApiKey` is unset.
 
 ## Backend Notes
 
@@ -196,7 +199,7 @@ For credentials with > 1000 txs per poll window or policies with > 100 mint/burn
 npm ls @odatano/watch
 
 # Verify config
-cds env get requires.cardano-watcher
+cds env get requires.watch
 
 # View logs
 cds watch
@@ -210,7 +213,7 @@ If `CardanoWatcherAdminService` does not appear after `cds serve`, the plugin's 
 {
   "cds": {
     "requires": {
-      "cardano-watcher": {
+      "watch": {
         "model": ["@odatano/watch/db/schema", "@odatano/watch/srv/admin-service"],
         "network": "preview",
         "blockfrostApiKey": "preview_YOUR_KEY"
@@ -268,7 +271,7 @@ jobs:
       - run: npm run build
       - run: npm test
         env:
-          BLOCKFROST_KEY: ${{ secrets.BLOCKFROST_KEY }}
+          BLOCKFROST_API_KEY: ${{ secrets.BLOCKFROST_API_KEY }}
 ```
 
 ## Resources

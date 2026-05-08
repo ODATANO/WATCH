@@ -50,7 +50,7 @@ CAP plugin that monitors the Cardano blockchain via polling-based backends. Four
 
 Entry point. Auto-loaded by CAP because the package contains `cds-plugin.js`.
 
-Registers the `cardano-watcher` kind with CDS model paths and sets `model` directly on the requires entry (CAP's `_link_required_services()` runs before plugins load and won't merge kind properties into existing requires entries).
+Registers the `watch` kind with CDS model paths and sets `model` directly on the requires entry (CAP's `_link_required_services()` runs before plugins load and won't merge kind properties into existing requires entries).
 
 On `cds.on('served')`, initializes the watcher. On `cds.on('shutdown')`, calls `stop()` — which flushes any pending coalesce buffers before clearing intervals.
 
@@ -131,7 +131,7 @@ Network-aware base URL (`mainnet.koios.rest` / `preview` / `preprod`). Optional 
 
 ### src/config.ts
 
-Loads from `cds.env.requires.watch` with environment-variable fallback (`BLOCKFROST_KEY`, `KOIOS_KEY`). Validates network and surfaces the merged config via `get()`.
+Loads from `cds.env.requires.watch` with environment-variable fallback (`BLOCKFROST_API_KEY`, `BLOCKFROST_CUSTOM_BACKEND`, `KOIOS_API_KEY`, `OGMIOS_URL`, `WATCHER_BACKEND`). Validates network and surfaces the merged config via `get()`.
 
 ## Data Flow
 

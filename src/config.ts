@@ -73,10 +73,10 @@ function loadInitialConfig(): CardanoWatcherConfig {
   if (!cdsConfig) {
     logger.debug("No cds.env.requires.watch configuration found, falling back to environment variables");
   }
-  // Resolve apiKey: prefer CDS config, fallback to env variable (for plugin development only)
-  let apiKey = cdsConfig?.blockfrostApiKey ?? env.BLOCKFROST_KEY;
+  // Resolve from CDS config, fallback to env variable (lets consumers keep secrets out of package.json)
+  let apiKey = cdsConfig?.blockfrostApiKey ?? env.BLOCKFROST_API_KEY;
   let customBackend = cdsConfig?.blockfrostCustomBackend ?? env.BLOCKFROST_CUSTOM_BACKEND;
-  let koiosKey = cdsConfig?.koiosApiKey ?? env.KOIOS_KEY;
+  let koiosKey = cdsConfig?.koiosApiKey ?? env.KOIOS_API_KEY;
   let ogmiosUrl = cdsConfig?.ogmiosUrl ?? env.OGMIOS_URL ?? "ws://localhost:1337";
   let backend = (cdsConfig?.backend ?? env.WATCHER_BACKEND ?? "blockfrost") as WatcherBackend;
 

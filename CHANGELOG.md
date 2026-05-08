@@ -5,6 +5,34 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.8] - 2026-05-08
+
+Bugfix release. Two issues prevented consumers from running the plugin against the README-documented config: the plugin patched the wrong requires-key, and env-var fallback names did not match the README naming.
+
+### Fixed
+
+- **Plugin requires-key mismatch — entities not deployed** (Blocker). README documented `cds.requires.watch` but `src/plugin.ts` registered the kind as `cardano-watcher` and patched `cds.env.requires['cardano-watcher']`. The `if (reqEntry)` guard never fired for consumers using the README config, so the plugin's `model` array was never set on the requires entry. Result: `cds deploy` never generated DDL for `WatcherCursor` / `WatchedCredential` / `WatchedAddress` / `WatchedPolicy` / `BlockchainEvent` / `TransactionSubmission` / `WatcherConfig`, and the polling loop crashed with `no such table: CardanoWatcherAdminService_WatchedCredentials`. Plugin now registers the kind as `watch` and patches `cds.env.requires['watch']`, matching the README.
+
+### Changed
+
+- **Env-var fallback names aligned with README naming.** `BLOCKFROST_KEY` → `BLOCKFROST_API_KEY`, `KOIOS_KEY` → `KOIOS_API_KEY`. `BLOCKFROST_CUSTOM_BACKEND`, `OGMIOS_URL`, `WATCHER_BACKEND` unchanged. Consumers can now leave the field out of `package.json` and export the env var instead — the plugin reads it directly when `cds.env.requires.watch.<field>` is unset. Documented in `README.md` and `docs/SETUP.md`.
+- **Docs: removed broken `${VAR}` substitution pattern.** Previous `docs/SETUP.md` suggested `"blockfrostApiKey": "${BLOCKFROST_KEY}"` — CAP's env loader does **not** substitute `${...}` placeholders inside `cds.requires.*`, so this pattern always produced a literal `"${BLOCKFROST_KEY}"` string at runtime. Replaced with the env-var fallback path described above.
+
+### Breaking (semantic)
+
+- Consumers who were using `cds.requires.cardano-watcher` as the requires key (i.e. matching the pre-0.1.8 plugin code rather than the README) must rename to `cds.requires.watch`. Anyone following the documented config is unaffected.
+- Consumers using `BLOCKFROST_KEY` / `KOIOS_KEY` env vars must rename to `BLOCKFROST_API_KEY` / `KOIOS_API_KEY`. No alias is kept.
+
+## [0.1.7] - 2026-05-06
+
+Adds support for routing the Blockfrost SDK at a self-hosted Blockfrost-compatible endpoint (e.g. [Dolos](https://github.com/txpipe/dolos)'s MiniBF) instead of the public Blockfrost service. Polling-heavy deployments would otherwise burn through the public free-tier daily quota; pointing at a local MiniBF removes the ceiling entirely.
+
+### Added
+
+- **`blockfrostCustomBackend` config field** (`src/config.ts`, `src/blockfrost.ts`). When set, the Blockfrost SDK is constructed with `customBackend` instead of the public-network preset, and `blockfrostApiKey` becomes optional. Env fallback: `BLOCKFROST_CUSTOM_BACKEND`. Default for Dolos's MiniBF is `http://localhost:3100/api/v0`.
+- README and `docs/SETUP.md` / `docs/QUICKSTART.md` updated with the self-hosted Blockfrost setup.
+- Unit tests in `test/unit/blockfrost.test.ts`, `test/unit/config.test.ts`, `test/unit/watcher.test.ts` covering the custom-backend code path (constructor wiring, config resolution, API-key-optional case).
+
 ## [0.1.6] - 2026-05-03
 
 Hotfix release. 0.1.5 shipped with a stale path in the CAP plugin entry — the package boot-crashes on `npm install` for any consumer.

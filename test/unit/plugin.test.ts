@@ -51,7 +51,7 @@ describe('Plugin Module', () => {
   });
 
   describe('Plugin Registration', () => {
-    it('should register cardano-watcher service kind', async () => {
+    it('should register watch service kind', async () => {
       // Import the plugin module - this triggers registration
       jest.resetModules();
       await import('../../src/plugin');
@@ -59,7 +59,7 @@ describe('Plugin Module', () => {
       // Check that requires and kinds objects exist
       expect(mockCds.env.requires).toBeDefined();
       expect((mockCds.env.requires as any).kinds).toBeDefined();
-      expect((mockCds.env.requires as any).kinds['cardano-watcher']).toEqual({
+      expect((mockCds.env.requires as any).kinds['watch']).toEqual({
         impl: '@odatano/watch',
         model: ['@odatano/watch/db/schema', '@odatano/watch/srv/admin-service'],
       });
