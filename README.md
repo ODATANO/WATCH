@@ -4,7 +4,7 @@
 [![Coverage](https://codecov.io/gh/ODATANO/WATCH/branch/main/graph/badge.svg)](https://codecov.io/gh/ODATANO/WATCH)
 [![npm](https://img.shields.io/npm/v/@odatano/watch?color=blue&logo=npm)](https://www.npmjs.com/package/@odatano/watch)
 [![npm downloads](https://img.shields.io/npm/dt/@odatano/watch?logo=npm&label=downloads&color=blue)](https://www.npmjs.com/package/@odatano/watch)
-  
+[![License](https://img.shields.io/badge/license-Apache%202.0-yellow)](LICENSE)
 
 
 CAP plugin for monitoring the Cardano blockchain. Watches addresses, payment credentials, and minting policies; emits events with rich UTxO payloads (assets, inline datums, reference scripts) and persists them for replay.
